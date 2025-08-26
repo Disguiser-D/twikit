@@ -1,3 +1,14 @@
 *.json
 /node_modules
 *.pyc
+
+.idea/
+.idea/*
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+twscrape.egg-info
+# C extensions
+*.so
