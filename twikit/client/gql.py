@@ -15,7 +15,7 @@ from ..constants import (
     TWEET_RESULT_BY_REST_ID_FEATURES,
     TWEET_RESULTS_BY_REST_IDS_FEATURES,
     USER_FEATURES,
-    USER_HIGHLIGHTS_TWEETS_FEATURES
+    USER_HIGHLIGHTS_TWEETS_FEATURES, CREATE_LIST_FEATURES
 )
 from ..utils import flatten_params, get_query_id
 
@@ -519,7 +519,7 @@ class GQLClient:
             'name': name,
             'description': description
         }
-        return await self.gql_post(Endpoint.CREATE_LIST, variables, LIST_FEATURES)
+        return await self.gql_post(Endpoint.CREATE_LIST, variables, CREATE_LIST_FEATURES)
 
     async def edit_list_banner(self, list_id, media_id):
         variables = {

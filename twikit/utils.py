@@ -128,22 +128,61 @@ def find_dict(obj: list | dict, key: str | int, find_one: bool = False) -> list[
 
 
 def httpx_transport_to_url(transport: AsyncHTTPTransport) -> str:
-    url = transport._pool._proxy_url
-    scheme = url.scheme.decode()
-    host = url.host.decode()
-    port = url.port
-    auth = None
-    if transport._pool._proxy_headers:
-        auth_header = dict(transport._pool._proxy_headers)[b'Proxy-Authorization'].decode()
-        auth = base64.b64decode(auth_header.split()[1]).decode()
+    """
+    Extract proxy URL from AsyncHTTPTransport, supporting both standard httpx
+    and httpx-socks configurations.
+    """
+    if not hasattr(transport, '_pool') or transport._pool is None:
+        return None
 
-    url_str = f'{scheme}://'
-    if auth is not None:
-        url_str += auth + '@'
-    url_str += host
-    if port is not None:
-        url_str += f':{port}'
-    return url_str
+    pool = transport._pool
+    pool_type = type(pool).__name__
+
+    try:
+        # Check if we have a proxy URL available
+        if not hasattr(pool, '_proxy_url') or pool._proxy_url is None:
+            return None
+
+        url = pool._proxy_url
+        scheme = url.scheme.decode() if hasattr(url.scheme, 'decode') else str(url.scheme)
+        host = url.host.decode() if hasattr(url.host, 'decode') else str(url.host)
+        port = url.port
+
+        # Handle authentication based on proxy type
+        auth = None
+
+        if pool_type == 'AsyncSOCKSProxy':
+            # For SOCKS proxies, check _proxy_auth (tuple of username, password)
+            if hasattr(pool, '_proxy_auth') and pool._proxy_auth:
+                auth_tuple = pool._proxy_auth
+                if isinstance(auth_tuple, tuple) and len(auth_tuple) >= 2:
+                    username = auth_tuple[0].decode() if hasattr(auth_tuple[0], 'decode') else str(auth_tuple[0])
+                    password = auth_tuple[1].decode() if hasattr(auth_tuple[1], 'decode') else str(auth_tuple[1])
+                    if username and password:
+                        auth = f"{username}:{password}"
+
+        elif pool_type == 'AsyncHTTPProxy':
+            # For HTTP proxies, check _proxy_headers
+            if hasattr(pool, '_proxy_headers') and pool._proxy_headers:
+                try:
+                    auth_header = dict(pool._proxy_headers)[b'Proxy-Authorization'].decode()
+                    auth = base64.b64decode(auth_header.split()[1]).decode()
+                except (KeyError, IndexError, ValueError):
+                    pass
+
+        # Build the URL string
+        url_str = f'{scheme}://'
+        if auth:
+            url_str += auth + '@'
+        url_str += host
+        if port:
+            url_str += f':{port}'
+
+        return url_str
+
+    except (AttributeError, KeyError, IndexError, ValueError) as e:
+        # If extraction fails, return None
+        return None
 
 
 def get_query_id(url: str) -> str:

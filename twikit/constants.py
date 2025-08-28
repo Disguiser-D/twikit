@@ -48,6 +48,15 @@ LIST_FEATURES = {
     'responsive_web_graphql_timeline_navigation_enabled': True
 }
 
+CREATE_LIST_FEATURES = {
+    'verified_phone_label_enabled': False,
+    'responsive_web_graphql_skip_user_profile_image_extensions_enabled': False,
+    'responsive_web_graphql_timeline_navigation_enabled': True,
+    "profile_label_improvements_pcf_label_in_post_enabled": True,
+    "rweb_tipjar_consumption_enabled": True,
+    "responsive_web_graphql_exclude_directive_enabled": True,
+}
+
 COMMUNITY_NOTE_FEATURES = {
     'responsive_web_birdwatch_media_notes_enabled': True,
     'responsive_web_graphql_timeline_navigation_enabled': True,

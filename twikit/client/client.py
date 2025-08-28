@@ -14,6 +14,7 @@ import filetype
 import pyotp
 from httpx import AsyncClient, AsyncHTTPTransport, Response
 from httpx._utils import URLPattern
+from packaging import version
 
 from .._captcha import Capsolver
 from ..bookmark import BookmarkFolder
@@ -106,7 +107,9 @@ class Client:
 
         self.http = AsyncClient(proxy=proxy, **kwargs)
         self.language = language
-        self.proxy = proxy
+        # Only set proxy via setter if it's not None to avoid overriding AsyncClient's configuration
+        if self.proxy is None and proxy is not None:
+            self.proxy = proxy
         self.captcha_solver = captcha_solver
         if captcha_solver is not None:
             captcha_solver.client = self
@@ -234,7 +237,36 @@ class Client:
 
     @proxy.setter
     def proxy(self, url: str) -> None:
-        self.http._mounts = {URLPattern('all://'): AsyncHTTPTransport(proxy=url)}
+        import httpx
+        
+        if url and (url.startswith('socks4://') or 
+                    url.startswith('socks5://') or 
+                    url.startswith('socks5h://')):
+            # Use httpx-socks for SOCKS proxy support
+            try:
+                from httpx_socks import AsyncProxyTransport
+                # Convert socks5h to socks5 (they use the same protocol, socks5h just indicates remote DNS)
+                normalized_url = url.replace('socks5h://', 'socks5://') if url.startswith('socks5h://') else url
+                transport = AsyncProxyTransport.from_url(normalized_url, rdns=url.startswith('socks5h://'))
+                self.http = AsyncClient(transport=transport)
+            except ImportError:
+                raise ImportError(
+                    "httpx-socks is required for SOCKS proxy support. "
+                    "Install it with: pip install httpx-socks"
+                )
+        else:
+            # HTTP/HTTPS proxy handling with version compatibility
+            httpx_version = version.parse(httpx.__version__)
+            
+            if httpx_version >= version.parse("0.26.0"):
+                # httpx >= 0.26.0 supports proxy parameter in AsyncHTTPTransport
+                self.http._mounts = {URLPattern('all://'): AsyncHTTPTransport(proxy=url)}
+            else:
+                # httpx < 0.26.0 uses proxies parameter - need to recreate client
+                if url:
+                    self.http = AsyncClient(proxies=url)
+                else:
+                    self.http = AsyncClient()
 
     def _get_csrf_token(self) -> str:
         """
