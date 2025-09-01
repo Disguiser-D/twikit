@@ -11,6 +11,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 
 import httpx
+from httpx import ConnectTimeout, ConnectError, RequestError
 from social_x.twikit.twikit.client.client import Client as TwikitClient
 from social_x.twikit.twikit.errors import (
     TooManyRequests,
@@ -84,7 +85,14 @@ class TwitterInteractionManager:
             error: twikit抛出的异常
             username: 发生错误的账户用户名
         """
-        logger.error(f"账户 {username} 发生twikit错误: {type(error).__name__}: {str(error)}")
+        # 获取详细错误信息
+        error_details = str(error) if str(error) else "无详细描述"
+        if hasattr(error, 'response') and error.response:
+            error_details += f" (HTTP {error.response.status_code})"
+        if hasattr(error, '__cause__') and error.__cause__:
+            error_details += f" 根本原因: {str(error.__cause__)}"
+        
+        logger.error(f"账户 {username} 发生twikit错误: {type(error).__name__}: {error_details}")
         
         try:
             if isinstance(error, TooManyRequests):
@@ -126,7 +134,7 @@ class TwitterInteractionManager:
                 await self.accounts_pool.ban_queue(username, queue_name, duration_minutes)
                 logger.warning(f"账户 {username} 因权限问题被锁定 {duration_minutes//60} 小时")
                 
-            elif isinstance(error, (httpx.HTTPStatusError, httpx.RequestError)):
+            elif isinstance(error, (httpx.HTTPStatusError, httpx.RequestError, ConnectTimeout, ConnectError)):
                 # HTTP或网络错误 - 处理代理失败
                 result = await self.accounts_pool.handle_proxy_failure(username)
                 if result == 0:
@@ -138,7 +146,12 @@ class TwitterInteractionManager:
                     
             else:
                 # 其他未知错误 - 记录日志
-                logger.error(f"账户 {username} 发生未知错误: {type(error).__name__}: {str(error)}")
+                error_details = str(error) if str(error) else "无详细描述"
+                if hasattr(error, 'response') and error.response:
+                    error_details += f" (HTTP {error.response.status_code})"
+                if hasattr(error, '__cause__') and error.__cause__:
+                    error_details += f" 根本原因: {str(error.__cause__)}"
+                logger.error(f"账户 {username} 发生未知错误: {type(error).__name__}: {error_details}")
                 
         except Exception as handle_error:
             logger.error(f"处理账户 {username} 错误时发生异常: {handle_error}")
