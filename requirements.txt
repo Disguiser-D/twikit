@@ -1,4 +1,4 @@
-httpx[socks]
+httpx
 httpx-socks
 filetype
 beautifulsoup4

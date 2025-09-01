@@ -105,7 +105,9 @@ class Client:
             )
             warnings.warn(message)
 
-        self.http = AsyncClient(proxy=proxy, **kwargs)
+        # 不传递 proxy 参数给 AsyncClient，避免版本兼容性问题
+        # proxy 功能将通过 transport 参数在外部实现
+        self.http = AsyncClient(**kwargs)
         self.language = language
         # Only set proxy via setter if it's not None to avoid overriding AsyncClient's configuration
         if self.proxy is None and proxy is not None:
