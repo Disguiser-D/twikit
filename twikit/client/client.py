@@ -2466,6 +2466,43 @@ class Client:
         response, _ = await self.v11.destroy_friendships(user_id)
         return User(self, build_user_data(response))
 
+    async def update_profile_info(self, **kwargs) -> User:
+        """
+        Updates the user's profile information.
+
+        Parameters
+        ----------
+        name : :class:`str`, optional
+            The user's display name.
+        description : :class:`str`, optional
+            The user's bio/description.
+        location : :class:`str`, optional
+            The user's location (in English).
+        url : :class:`str`, optional
+            The user's website URL.
+        profile_link_color : :class:`str`, optional
+            Hex color code for profile links (e.g., "FF0000").
+        include_entities : :class:`bool`, optional
+            Whether to include entities in the response.
+        skip_status : :class:`bool`, optional
+            Whether to skip status in the response.
+
+        Returns
+        -------
+        :class:`User`
+            The updated user object.
+
+        Examples
+        --------
+        >>> await client.update_profile_info(
+        ...     name="John Smith",
+        ...     description="Crypto enthusiast and blockchain developer",
+        ...     location="San Francisco"
+        ... )
+        """
+        response, _ = await self.v11.update_profile(**kwargs)
+        return User(self, build_user_data(response))
+
     async def block_user(self, user_id: str) -> User:
         """
         Blocks a user.

@@ -17,6 +17,7 @@ class Endpoint:
     ACCOUNT_LOGOUT = f'https://api.{DOMAIN}/1.1/account/logout.json'
     ONBOARDING_TASK = f'https://api.{DOMAIN}/1.1/onboarding/task.json'
     SETTINGS = f'https://api.{DOMAIN}/1.1/account/settings.json'
+    UPDATE_PROFILE = f'https://api.{DOMAIN}/1.1/account/update_profile.json'
     UPLOAD_MEDIA = f'https://upload.{DOMAIN}/i/media/upload.json'
     UPLOAD_MEDIA_2 = f'https://upload.{DOMAIN}/i/media/upload2.json'
     CREATE_MEDIA_METADATA = f'https://api.{DOMAIN}/1.1/media/metadata/create.json'
@@ -356,6 +357,34 @@ class V11Client:
         headers['content-type'] = 'application/x-www-form-urlencoded'
         return await self.base.post(
             Endpoint.DESTROY_MUTES,
+            data=data,
+            headers=headers
+        )
+
+    async def update_profile(self, **kwargs):
+        data = {}
+        
+        # Add supported parameters
+        if 'name' in kwargs:
+            data['name'] = kwargs['name']
+        if 'description' in kwargs:
+            data['description'] = kwargs['description']
+        if 'location' in kwargs:
+            data['location'] = kwargs['location']
+        if 'url' in kwargs:
+            data['url'] = kwargs['url']
+        if 'profile_link_color' in kwargs:
+            data['profile_link_color'] = kwargs['profile_link_color']
+        if 'include_entities' in kwargs:
+            data['include_entities'] = kwargs['include_entities']
+        if 'skip_status' in kwargs:
+            data['skip_status'] = kwargs['skip_status']
+            
+        headers = self.base._base_headers | {
+            'content-type': 'application/x-www-form-urlencoded'
+        }
+        return await self.base.post(
+            Endpoint.UPDATE_PROFILE,
             data=data,
             headers=headers
         )

@@ -171,7 +171,7 @@ class TwitterInteractionManager:
             # 向上查找调用栈，找到公共方法
             while frame:
                 frame = frame.f_back
-                if frame and frame.f_code.co_name in ['create_tweet', 'retweet', 'reply_to_tweet', 'follow_user']:
+                if frame and frame.f_code.co_name in ['create_tweet', 'retweet', 'reply_to_tweet', 'follow_user', 'update_profile_info']:
                     method_name = frame.f_code.co_name
                     if method_name == 'create_tweet':
                         return 'CreateTweet'
@@ -181,6 +181,8 @@ class TwitterInteractionManager:
                         return 'CreateTweet'
                     elif method_name == 'follow_user':
                         return 'CreateFriendship'
+                    elif method_name == 'update_profile_info':
+                        return 'UpdateProfile'
                     break
         finally:
             del frame
@@ -444,6 +446,86 @@ class TwitterInteractionManager:
             user = await client.follow_user(user_id)
             
             logger.info(f"账户 {account.username} 成功关注用户: {user_id}")
+            return user
+            
+        except Exception as error:
+            await self._handle_twikit_error(error, account.username)
+            raise
+
+    async def update_profile_info(
+        self,
+        username: Optional[str] = None,
+        **kwargs
+    ) -> User:
+        """
+        更新用户个人资料信息
+        
+        Args:
+            username: 指定使用的账户用户名（可选，默认使用default角色账户）
+            **kwargs: 个人资料更新参数
+                - name (str): 显示名称
+                - description (str): 个人简介/Bio
+                - location (str): 位置信息（建议使用英文城市名）
+                - url (str): 个人网站链接
+                - profile_link_color (str): 个人资料链接颜色（十六进制，不包含#）
+                - include_entities (bool): 是否在响应中包含实体信息
+                - skip_status (bool): 是否在响应中跳过状态信息
+            
+        Returns:
+            更新后的User对象
+            
+        Raises:
+            ValueError: 当指定的账户不可用时
+            TwitterException: 当个人资料更新失败时
+            
+        Examples:
+            # 使用指定账户更新资料
+            user = await manager.update_profile_info(
+                username="specific_account",
+                name="Crypto Enthusiast",
+                description="Building the future of Web3 🚀",
+                location="New York"
+            )
+            
+            # 使用默认账户更新资料
+            user = await manager.update_profile_info(
+                name="DeFi Trader",
+                location="London"
+            )
+        """
+        # 获取账户
+        if username:
+            account = await self.accounts_pool.get(username)
+            if not account:
+                raise ValueError(f"指定的账户 {username} 不存在")
+        else:
+            account = await self.accounts_pool.get_for_queue("UpdateProfile", account_role="default")
+            if not account:
+                raise ValueError("没有可用的default角色账户")
+        
+        try:
+            # 创建twikit客户端
+            client = await self._get_twikit_client(account)
+            
+            # 更新个人资料
+            user = await client.update_profile_info(**kwargs)
+            
+            # 构建日志消息，显示更新的字段
+            updated_fields = []
+            if 'name' in kwargs:
+                updated_fields.append(f"name='{kwargs['name']}'")
+            if 'description' in kwargs:
+                desc_preview = kwargs['description'][:50] + "..." if len(kwargs['description']) > 50 else kwargs['description']
+                updated_fields.append(f"description='{desc_preview}'")
+            if 'location' in kwargs:
+                updated_fields.append(f"location='{kwargs['location']}'")
+            if 'url' in kwargs:
+                updated_fields.append(f"url='{kwargs['url']}'")
+            if 'profile_link_color' in kwargs:
+                updated_fields.append(f"link_color='{kwargs['profile_link_color']}'")
+            
+            fields_str = ", ".join(updated_fields) if updated_fields else "未知字段"
+            logger.info(f"账户 {account.username} 成功更新个人资料: {fields_str}")
             return user
             
         except Exception as error:
