@@ -129,59 +129,57 @@ def find_dict(obj: list | dict, key: str | int, find_one: bool = False) -> list[
 
 def httpx_transport_to_url(transport: AsyncHTTPTransport) -> str:
     """
-    Extract proxy URL from AsyncHTTPTransport, supporting both standard httpx
-    and httpx-socks configurations.
+    Extract proxy URL from httpx-socks AsyncProxyTransport or standard AsyncHTTPTransport.
+    Fixed to work with actual httpx-socks structure.
     """
-    if not hasattr(transport, '_pool') or transport._pool is None:
-        return None
-
-    pool = transport._pool
-    pool_type = type(pool).__name__
-
     try:
-        # Check if we have a proxy URL available
-        if not hasattr(pool, '_proxy_url') or pool._proxy_url is None:
-            return None
-
-        url = pool._proxy_url
-        scheme = url.scheme.decode() if hasattr(url.scheme, 'decode') else str(url.scheme)
-        host = url.host.decode() if hasattr(url.host, 'decode') else str(url.host)
-        port = url.port
-
-        # Handle authentication based on proxy type
-        auth = None
-
-        if pool_type == 'AsyncSOCKSProxy':
-            # For SOCKS proxies, check _proxy_auth (tuple of username, password)
-            if hasattr(pool, '_proxy_auth') and pool._proxy_auth:
-                auth_tuple = pool._proxy_auth
-                if isinstance(auth_tuple, tuple) and len(auth_tuple) >= 2:
-                    username = auth_tuple[0].decode() if hasattr(auth_tuple[0], 'decode') else str(auth_tuple[0])
-                    password = auth_tuple[1].decode() if hasattr(auth_tuple[1], 'decode') else str(auth_tuple[1])
+        # httpx-socks AsyncProxyTransport 检查
+        if hasattr(transport, '_pool') and transport._pool:
+            pool = transport._pool
+            
+            # 检查是否为 httpx-socks 的 AsyncProxy
+            if hasattr(pool, '_proxy_type') and hasattr(pool, '_proxy_host'):
+                # ProxyType 枚举映射
+                from python_socks import ProxyType
+                proxy_type_map = {
+                    ProxyType.SOCKS4: 'socks4',
+                    ProxyType.SOCKS5: 'socks5', 
+                    ProxyType.HTTP: 'http'
+                }
+                
+                scheme = proxy_type_map.get(pool._proxy_type, 'socks5')
+                host = pool._proxy_host
+                port = pool._proxy_port
+                
+                # 处理认证信息
+                auth = None
+                if hasattr(pool, '_username') and hasattr(pool, '_password'):
+                    username = pool._username
+                    password = pool._password
                     if username and password:
                         auth = f"{username}:{password}"
-
-        elif pool_type == 'AsyncHTTPProxy':
-            # For HTTP proxies, check _proxy_headers
-            if hasattr(pool, '_proxy_headers') and pool._proxy_headers:
-                try:
-                    auth_header = dict(pool._proxy_headers)[b'Proxy-Authorization'].decode()
-                    auth = base64.b64decode(auth_header.split()[1]).decode()
-                except (KeyError, IndexError, ValueError):
-                    pass
-
-        # Build the URL string
-        url_str = f'{scheme}://'
-        if auth:
-            url_str += auth + '@'
-        url_str += host
-        if port:
-            url_str += f':{port}'
-
-        return url_str
-
-    except (AttributeError, KeyError, IndexError, ValueError) as e:
-        # If extraction fails, return None
+                
+                # 构建URL字符串
+                url_str = f'{scheme}://'
+                if auth:
+                    url_str += auth + '@'
+                url_str += f'{host}:{port}'
+                
+                # 如果是 socks5 且启用了远程DNS解析，使用 socks5h
+                if (scheme == 'socks5' and 
+                    hasattr(pool, '_rdns') and pool._rdns):
+                    url_str = url_str.replace('socks5://', 'socks5h://')
+                
+                return url_str
+            
+            # 标准 httpx transport 检查（兼容性）
+            elif hasattr(pool, '_proxy_url') and pool._proxy_url:
+                url = pool._proxy_url
+                return str(url)
+                
+        return None
+        
+    except (AttributeError, ValueError, ImportError):
         return None
 
 

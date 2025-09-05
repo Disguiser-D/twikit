@@ -83,9 +83,14 @@ class GuestClient:
             )
             warnings.warn(message)
 
-        self.http = AsyncClient(proxy=proxy, **kwargs)
+        # 不传递 proxy 参数给 AsyncClient，统一通过 setter 处理
+        self.http = AsyncClient(**kwargs)
         self.language = language
-        self.proxy = proxy
+        self._proxy_url = None
+        
+        # 设置代理（如果提供）
+        if proxy:
+            self.proxy = proxy
 
         self._token = TOKEN
         self._user_agent = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
@@ -161,20 +166,48 @@ class GuestClient:
     @property
     def proxy(self) -> str:
         ':meta private:'
-        transport: AsyncHTTPTransport = self.http._mounts.get(
-            URLPattern('all://')
-        )
-        if transport is None:
-            return None
-        if not hasattr(transport._pool, '_proxy_url'):
-            return None
-        return httpx_transport_to_url(transport)
+        # 获取当前配置的代理URL
+        transport = getattr(self.http, '_transport', None)
+        if transport:
+            return httpx_transport_to_url(transport)
+        
+        # 检查传统的 mounts 配置
+        mount_transport = self.http._mounts.get(URLPattern('all://'))
+        if mount_transport:
+            return httpx_transport_to_url(mount_transport)
+        
+        return self._proxy_url if hasattr(self, '_proxy_url') else None
 
     @proxy.setter
     def proxy(self, url: str) -> None:
-        self.http._mounts = {
-            URLPattern('all://'): AsyncHTTPTransport(proxy=url)
-        }
+        from httpx import AsyncClient
+        
+        if not url:
+            # 清除代理配置
+            self.http = AsyncClient()
+            self._proxy_url = None
+            return
+            
+        # 统一使用 httpx-socks 处理所有类型的代理
+        try:
+            from httpx_socks import AsyncProxyTransport
+            
+            # 标准化代理URL
+            if url.startswith('socks5h://'):
+                # socks5h 表示远程DNS解析
+                normalized_url = url.replace('socks5h://', 'socks5://')
+                transport = AsyncProxyTransport.from_url(normalized_url, rdns=True)
+            else:
+                transport = AsyncProxyTransport.from_url(url)
+                
+            self.http = AsyncClient(transport=transport)
+            self._proxy_url = url
+            
+        except ImportError:
+            raise ImportError(
+                "httpx-socks[trio] is required for proxy support. "
+                "Install it with: pip install httpx-socks[trio]"
+            )
 
     @property
     def _base_headers(self) -> dict[str, str]:

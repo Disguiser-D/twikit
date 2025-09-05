@@ -106,11 +106,13 @@ class Client:
             warnings.warn(message)
 
         # 不传递 proxy 参数给 AsyncClient，避免版本兼容性问题
-        # proxy 功能将通过 transport 参数在外部实现
+        # proxy 功能将通过 httpx-socks transport 统一实现
         self.http = AsyncClient(**kwargs)
         self.language = language
-        # Only set proxy via setter if it's not None to avoid overriding AsyncClient's configuration
-        if self.proxy is None and proxy is not None:
+        self._proxy_url = None
+        
+        # 设置代理（如果提供）
+        if proxy:
             self.proxy = proxy
         self.captcha_solver = captcha_solver
         if captcha_solver is not None:
@@ -230,45 +232,49 @@ class Client:
     @property
     def proxy(self) -> str:
         ':meta private:'
-        transport: AsyncHTTPTransport = self.http._mounts.get(URLPattern('all://'))
-        if transport is None:
-            return None
-        if not hasattr(transport._pool, '_proxy_url'):
-            return None
-        return httpx_transport_to_url(transport)
+        # 获取当前配置的代理URL，优先检查 transport
+        transport = getattr(self.http, '_transport', None)
+        if transport:
+            return httpx_transport_to_url(transport)
+        
+        # 检查传统的 mounts 配置
+        from httpx import AsyncHTTPTransport
+        mount_transport = self.http._mounts.get(URLPattern('all://'))
+        if isinstance(mount_transport, AsyncHTTPTransport):
+            return httpx_transport_to_url(mount_transport)
+        
+        return self._proxy_url if hasattr(self, '_proxy_url') else None
 
     @proxy.setter
     def proxy(self, url: str) -> None:
-        import httpx
+        from httpx import AsyncClient
         
-        if url and (url.startswith('socks4://') or 
-                    url.startswith('socks5://') or 
-                    url.startswith('socks5h://')):
-            # Use httpx-socks for SOCKS proxy support
-            try:
-                from httpx_socks import AsyncProxyTransport
-                # Convert socks5h to socks5 (they use the same protocol, socks5h just indicates remote DNS)
-                normalized_url = url.replace('socks5h://', 'socks5://') if url.startswith('socks5h://') else url
-                transport = AsyncProxyTransport.from_url(normalized_url, rdns=url.startswith('socks5h://'))
-                self.http = AsyncClient(transport=transport)
-            except ImportError:
-                raise ImportError(
-                    "httpx-socks is required for SOCKS proxy support. "
-                    "Install it with: pip install httpx-socks"
-                )
-        else:
-            # HTTP/HTTPS proxy handling with version compatibility
-            httpx_version = version.parse(httpx.__version__)
+        if not url:
+            # 清除代理配置
+            self.http = AsyncClient()
+            self._proxy_url = None
+            return
             
-            if httpx_version >= version.parse("0.26.0"):
-                # httpx >= 0.26.0 supports proxy parameter in AsyncHTTPTransport
-                self.http._mounts = {URLPattern('all://'): AsyncHTTPTransport(proxy=url)}
+        # 统一使用 httpx-socks 处理所有类型的代理
+        try:
+            from httpx_socks import AsyncProxyTransport
+            
+            # 标准化代理URL
+            if url.startswith('socks5h://'):
+                # socks5h 表示远程DNS解析
+                normalized_url = url.replace('socks5h://', 'socks5://')
+                transport = AsyncProxyTransport.from_url(normalized_url, rdns=True)
             else:
-                # httpx < 0.26.0 uses proxies parameter - need to recreate client
-                if url:
-                    self.http = AsyncClient(proxies=url)
-                else:
-                    self.http = AsyncClient()
+                transport = AsyncProxyTransport.from_url(url)
+                
+            self.http = AsyncClient(transport=transport)
+            self._proxy_url = url
+            
+        except ImportError:
+            raise ImportError(
+                "httpx-socks[trio] is required for proxy support. "
+                "Install it with: pip install httpx-socks[trio]"
+            )
 
     def _get_csrf_token(self) -> str:
         """
