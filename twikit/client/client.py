@@ -94,6 +94,7 @@ class Client:
         self,
         language: str = 'en-US',
         proxy: str | None = None,
+        proxy_timeout: dict | None = None,
         captcha_solver: Capsolver | None = None,
         user_agent: str | None = None,
         **kwargs
@@ -110,6 +111,7 @@ class Client:
         self.http = AsyncClient(**kwargs)
         self.language = language
         self._proxy_url = None
+        self._proxy_timeout = proxy_timeout or {}
         
         # 设置代理（如果提供）
         if proxy:
@@ -258,6 +260,20 @@ class Client:
         # 统一使用 httpx-socks 处理所有类型的代理
         try:
             from httpx_socks import AsyncProxyTransport
+            import httpx
+            
+            # 获取自定义超时配置
+            connect_timeout = self._proxy_timeout.get('connect', 30.0)
+            read_timeout = self._proxy_timeout.get('read', 60.0)
+            total_timeout = self._proxy_timeout.get('total', 90.0)
+            
+            # 创建超时配置
+            timeout_config = httpx.Timeout(
+                connect=connect_timeout,
+                read=read_timeout,
+                write=30.0,  # 写入超时
+                pool=30.0    # 连接池超时
+            )
             
             # 标准化代理URL
             if url.startswith('socks5h://'):
@@ -267,7 +283,7 @@ class Client:
             else:
                 transport = AsyncProxyTransport.from_url(url)
                 
-            self.http = AsyncClient(transport=transport)
+            self.http = AsyncClient(transport=transport, timeout=timeout_config)
             self._proxy_url = url
             
         except ImportError:
